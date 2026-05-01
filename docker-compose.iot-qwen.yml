@@ -1,0 +1,107 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-iot-qwen
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  pull-qwen25-15b:
+    image: ollama/ollama:latest
+    container_name: ollama-pull-iot-qwen-base
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["ollama"]
+    command: ["pull", "qwen2.5:1.5b"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  create-iot-qwen:
+    image: ollama/ollama:latest
+    container_name: ollama-create-iot-qwen
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        cat > /tmp/Modelfile <<'EOF'
+        FROM qwen2.5:1.5b
+
+        PARAMETER temperature 0
+        PARAMETER num_ctx 2048
+        PARAMETER repeat_penalty 1.1
+
+        SYSTEM """
+        You are an IoT monitoring assistant.
+
+        Your job:
+        - Analyze IoT device telemetry.
+        - Detect abnormal states and alert conditions.
+        - Return only valid JSON.
+        - Do not include markdown.
+        - Do not explain outside JSON.
+
+        Rules:
+        - temperature > 80 => critical
+        - temperature > 70 => warning
+        - temperature <= 70 => normal unless another rule triggers
+        - battery < 15 => warning
+        - offline_minutes > 5 => critical
+        - signal_rssi < -85 => warning
+        - missing required telemetry => unknown
+
+        Output schema:
+        {
+          "device_id": "string",
+          "status": "normal|warning|critical|unknown",
+          "severity": 0,
+          "summary": "string",
+          "alerts": [
+            {
+              "code": "string",
+              "message": "string",
+              "confidence": 0.0
+            }
+          ],
+          "recommended_action": "string",
+          "needs_human": false
+        }
+        """
+        EOF
+
+        ollama create iot-qwen:1.5b -f /tmp/Modelfile
+    depends_on:
+      ollama:
+        condition: service_healthy
+      pull-qwen25-15b:
+        condition: service_completed_successfully
+    restart: "no"
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui-iot-qwen
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - open_webui_data:/app/backend/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      create-iot-qwen:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  open_webui_data:
