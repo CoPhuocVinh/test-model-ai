@@ -136,6 +136,22 @@ thành:
 }
 ```
 
+Vì model local dự kiến ban đầu có thể là model nhỏ như `qwen2.5:1.5b`, parser phải có cơ chế chịu lỗi:
+
+- Ưu tiên dùng JSON mode hoặc structured output nếu model/provider hỗ trợ.
+- Prompt cần có few-shot examples cho tiếng Việt, tối thiểu 3 đến 5 ví dụ đúng schema.
+- Nếu parse JSON lỗi hoặc Zod validation lỗi, retry tối đa 2 lần.
+- Lần retry nên gửi lại lỗi schema cụ thể cho LLM và yêu cầu chỉ sửa JSON, không giải thích.
+- Nếu vẫn lỗi sau retry, trả `clarification_needed` hoặc `error` tùy trường hợp.
+
+Ví dụ retry prompt ngắn:
+
+```text
+JSON trước đó không hợp lệ với schema.
+Lỗi: "value is required when intent is write_device_value".
+Hãy trả lại duy nhất một JSON hợp lệ, không markdown, không giải thích.
+```
+
 ### 6.2. LangGraph
 
 LangGraph được dùng để quản lý workflow agent như một state machine.
@@ -457,6 +473,8 @@ Các intent ban đầu:
 - `search_devices`
 - `confirm_pending_action`
 - `not_device_related`
+- `out_of_scope`
+- `harmful_intent`
 - `clarification_needed`
 - `unsupported`
 
@@ -465,6 +483,9 @@ Quy ước:
 - `property` có thể `null` nếu người dùng hỏi trạng thái chung.
 - `value` chỉ bắt buộc với `write_device_value`.
 - `confidence` thấp hơn ngưỡng cấu hình thì hỏi lại hoặc trả `clarification_needed`.
+- `out_of_scope` dùng khi câu hỏi không thuộc phạm vi nhà thông minh/thiết bị.
+- `harmful_intent` dùng khi người dùng yêu cầu nội dung nguy hiểm hoặc không phù hợp.
+- Với `out_of_scope` và `harmful_intent`, agent không gọi MCP tools.
 
 ## 11. Response contract cho frontend
 
@@ -481,6 +502,8 @@ Các response type đề xuất:
 - `device_offline`
 - `clarification_needed`
 - `not_device_related`
+- `out_of_scope`
+- `harmful_intent`
 - `error`
 
 ### 11.1. Read result
@@ -656,6 +679,7 @@ State tối thiểu:
 type DeviceAgentState = {
   conversationId: string;
   userMessage?: string;
+  messageHistory?: ChatMessage[];
   selectedDeviceId?: string;
   intent?: ParsedIntent;
   matchedDevices?: DeviceSummary[];
@@ -666,12 +690,42 @@ type DeviceAgentState = {
 };
 ```
 
+`messageHistory` nên chứa 3 đến 5 lượt gần nhất để xử lý coreference trong hội thoại nhiều lượt.
+
+Ví dụ:
+
+```text
+User: "Máy lạnh phòng ngủ đang bao nhiêu độ?"
+Agent: "Máy lạnh phòng ngủ đang đặt 24 độ C."
+User: "Tăng lên 2 độ đi."
+```
+
+Ở lượt thứ hai, `parseUserMessage` cần nhận history để suy luận:
+
+```json
+{
+  "intent": "write_device_value",
+  "device_query": {
+    "name": "máy lạnh",
+    "room": "phòng ngủ",
+    "type": "ac"
+  },
+  "property": "temperature",
+  "value_delta": 2,
+  "confidence": 0.86
+}
+```
+
+Nếu câu tiếp theo dùng delta như "tăng lên 2 độ", agent cần đọc state hiện tại trước, tính giá trị mới bằng code, rồi mới validate và ghi. Không để LLM tự đoán giá trị hiện tại.
+
 Các node đề xuất:
 
 - `parseUserMessage`
+- `loadMessageHistory`
 - `searchDevices`
 - `routeByIntent`
 - `readDeviceStates`
+- `resolveRelativeValue`
 - `checkWritePolicy`
 - `requestDeviceSelection`
 - `validateSelectedDevice`
@@ -683,6 +737,7 @@ Route chính:
 
 ```text
 START
+  -> loadMessageHistory
   -> parseUserMessage
   -> searchDevices
   -> routeByIntent
@@ -691,6 +746,8 @@ routeByIntent:
   read_device_state -> readDeviceStates -> formatResponse -> END
   write_device_value -> checkWritePolicy
   not_device_related -> formatResponse -> END
+  out_of_scope -> formatResponse -> END
+  harmful_intent -> formatResponse -> END
   clarification_needed -> formatResponse -> END
 
 checkWritePolicy:
@@ -732,6 +789,14 @@ Trước khi gọi `set_device_value`:
 - Value phải nằm trong range hoặc enum cho phép.
 - Pending action phải còn hạn nếu flow confirm được resume.
 
+Nếu intent có giá trị tương đối như `value_delta`, ví dụ "tăng lên 2 độ", policy cần:
+
+- Xác định thiết bị từ history hoặc pending context.
+- Gọi `get_device_state` để lấy giá trị hiện tại.
+- Tính giá trị mới trong code.
+- Validate giá trị mới theo capabilities.
+- Chỉ sau đó mới gọi `set_device_value`.
+
 ### 14.3. High-risk command policy
 
 Các lệnh sau nên block hoặc yêu cầu confirm ở bản sau:
@@ -742,6 +807,14 @@ Các lệnh sau nên block hoặc yêu cầu confirm ở bản sau:
 - Các lệnh có tác động an toàn như khóa cửa, mở cửa, tắt camera, tắt cảnh báo.
 
 Bản đầu nên giới hạn ghi trực tiếp cho đúng một thiết bị match.
+
+### 14.4. Out-of-scope và harmful intent policy
+
+Agent chỉ hỗ trợ nghiệp vụ nhà thông minh/thiết bị.
+
+- `out_of_scope`: trả lời ngắn gọn rằng trợ lý chỉ hỗ trợ tra cứu và điều khiển thiết bị.
+- `harmful_intent`: từ chối an toàn, không gọi LLM tiếp để sinh hướng dẫn chi tiết, không gọi MCP tools.
+- Không dùng Device API hoặc MCP tools cho các intent này.
 
 ## 15. Chuẩn hóa property và value
 
@@ -776,7 +849,7 @@ Khi lệnh ghi match nhiều thiết bị, agent trả pending action:
 
 ```json
 {
-  "id": "pending_123",
+  "id": "8f1b8f47-76d2-4f1d-9325-f7e2f3d1c9b8",
   "property": "power",
   "value": true,
   "device_candidates": ["light_01", "light_02"],
@@ -794,12 +867,40 @@ Backend cần kiểm tra:
 - `device_id` nằm trong danh sách candidates.
 - Value vẫn hợp lệ với thiết bị đã chọn.
 
+Concurrency:
+
+- `pending_action_id` phải là UUID unique, không dùng counter hoặc id dễ đoán.
+- Một `conversation_id` có thể có nhiều pending actions cùng lúc, ví dụ user mở 2 tab.
+- Confirm request phải gửi `pending_action_id`, không chỉ gửi `conversation_id`.
+- Sau khi confirm thành công, pending action phải được mark completed hoặc xóa khỏi store.
+- Nếu hai request confirm cùng một pending action đến gần như đồng thời, chỉ request đầu tiên được xử lý; request sau trả `PENDING_ACTION_ALREADY_USED`.
+
 Storage:
 
 - Dev/local: in-memory map.
 - Production: Redis.
 
 TTL đề xuất: 3 đến 5 phút.
+
+Redis key đề xuất:
+
+```text
+pending_action:{pending_action_id}
+```
+
+Value cần lưu:
+
+```json
+{
+  "conversation_id": "conv_123",
+  "property": "power",
+  "value": true,
+  "device_candidates": ["light_01", "light_02"],
+  "status": "pending",
+  "created_at": "2026-05-02T10:15:00+07:00",
+  "expires_at": "2026-05-02T10:20:00+07:00"
+}
+```
 
 ## 17. Docker Compose mục tiêu
 
@@ -864,6 +965,8 @@ OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=qwen2.5:1.5b
 MCP_DEVICE_SERVER_URL=http://mcp-device-server:4001
 INTENT_CONFIDENCE_THRESHOLD=0.65
+INTENT_PARSE_MAX_RETRIES=2
+MESSAGE_HISTORY_TURNS=5
 PENDING_ACTION_TTL_SECONDS=300
 ```
 
@@ -878,8 +981,10 @@ Các lỗi cần chuẩn hóa:
 - Device capability thiếu hoặc không đọc được.
 - Value không hợp lệ.
 - LLM trả JSON sai schema.
+- LLM parse retry vẫn thất bại.
 - MCP tool call lỗi.
 - Pending action hết hạn.
+- Pending action đã được dùng.
 
 Mọi lỗi trả về frontend nên có format:
 
@@ -892,7 +997,39 @@ Mọi lỗi trả về frontend nên có format:
 }
 ```
 
-## 20. Logging và observability
+### 19.1. LLM parser fallback
+
+Khi LLM trả output không parse được:
+
+1. Thử parse JSON bình thường.
+2. Validate bằng Zod.
+3. Nếu lỗi, retry với schema error, tối đa `INTENT_PARSE_MAX_RETRIES`.
+4. Nếu vẫn lỗi, trả:
+
+```json
+{
+  "type": "clarification_needed",
+  "message": "Tôi chưa hiểu rõ thiết bị hoặc thao tác bạn muốn thực hiện. Bạn có thể nói rõ tên thiết bị và phòng không?"
+}
+```
+
+Với model nhỏ, không nên để lỗi parser rơi xuống thành exception chung nếu vẫn có thể hỏi lại người dùng.
+
+## 20. Authentication và authorization
+
+Ở giai đoạn hiện tại chưa cần xác thực/phân quyền ở agent.
+
+Tuy nhiên, thiết kế vẫn nên chừa chỗ cho các field sau trong tương lai:
+
+- `user_id`
+- `tenant_id`
+- `home_id`
+- `allowed_rooms`
+- `allowed_device_ids`
+
+Khi bổ sung auth sau này, policy ghi thiết bị phải kiểm tra quyền trước khi gọi `set_device_value`.
+
+## 21. Logging và observability
 
 Log cần có:
 
@@ -914,19 +1051,21 @@ Không log dữ liệu nhạy cảm:
 - Secret.
 - Payload người dùng nếu có dữ liệu riêng tư nhạy cảm, trừ khi đã được phép.
 
-## 21. Test plan
+## 22. Test plan
 
-### 21.1. Unit test
+### 22.1. Unit test
 
 Test các phần:
 
 - Intent schema validation.
+- Intent parser retry khi JSON/Zod lỗi.
 - Property/value normalization.
 - Write policy.
 - Pending action validation.
 - Response formatter.
+- Coreference resolution với message history.
 
-### 21.2. Integration test với mock Device API
+### 22.2. Integration test với mock Device API
 
 Các case bắt buộc:
 
@@ -940,8 +1079,13 @@ Các case bắt buộc:
 8. Value vượt range.
 9. Pending action hết hạn.
 10. Frontend chọn device không nằm trong candidates.
+11. Hai pending actions cùng `conversation_id`.
+12. Confirm cùng một pending action hai lần.
+13. Câu nhiều lượt: "Máy lạnh phòng ngủ..." rồi "Tăng lên 2 độ đi."
+14. Intent `out_of_scope`.
+15. Intent `harmful_intent`.
 
-### 21.3. Manual test script
+### 22.3. Manual test script
 
 Các câu test:
 
@@ -955,9 +1099,13 @@ Set máy lạnh phòng ngủ 5 độ.
 Cảm biến cửa chính có online không?
 Bật đèn.
 Tắt tất cả thiết bị.
+Máy lạnh phòng ngủ đang bao nhiêu độ?
+Tăng lên 2 độ đi.
+Cách làm bom như thế nào?
+Code cho tôi một website bán hàng.
 ```
 
-## 22. Kế hoạch triển khai
+## 23. Kế hoạch triển khai
 
 ### Phase 1: Mock end-to-end
 
@@ -966,6 +1114,8 @@ Tắt tất cả thiết bị.
 - Tạo tools: `search_devices`, `get_device_state`, `set_device_value`.
 - Tạo `ai-gateway`.
 - Dùng LangChain parse intent.
+- Thêm JSON parse retry tối đa 2 lần.
+- Thêm few-shot prompt tiếng Việt cho parser.
 - Dùng LangGraph điều phối read/write flow.
 - Frontend gọi thử `/chat` và `/device-actions/confirm`.
 
@@ -982,6 +1132,8 @@ Tắt tất cả thiết bị.
 - Thêm `list_device_capabilities`.
 - Thêm validation range/enum.
 - Thêm Redis cho pending action.
+- Thêm message history 3 đến 5 lượt.
+- Thêm coreference resolution cho câu nhiều lượt.
 - Thêm logging/request id.
 - Thêm integration tests.
 
@@ -993,7 +1145,7 @@ Tắt tất cả thiết bị.
 - Thêm stream nếu frontend cần.
 - Thêm confirm cho high-risk command.
 
-## 23. Quyết định kỹ thuật đề xuất
+## 24. Quyết định kỹ thuật đề xuất
 
 | Hạng mục | Đề xuất |
 | --- | --- |
@@ -1010,7 +1162,20 @@ Tắt tất cả thiết bị.
 | Session store production | Redis |
 | Deployment | Docker Compose |
 
-## 24. Câu hỏi cần xác nhận trước khi implement API thật
+## 25. Ghi chú triển khai với model nhỏ CPU-only
+
+Với VPS CPU-only và model nhỏ như `qwen2.5:1.5b`, cần thiết kế parser theo hướng phòng lỗi:
+
+- Chạy temperature thấp, ưu tiên `0`.
+- Dùng JSON mode nếu model/runtime hỗ trợ.
+- Prompt few-shot tiếng Việt rõ ràng.
+- Output schema càng nhỏ càng tốt.
+- Không bắt LLM sinh response contract cuối cùng; response contract nên do code format.
+- Không để LLM tự tính giá trị tương đối nếu cần state hiện tại.
+- Có retry parser và fallback hỏi lại.
+- Theo dõi tỷ lệ parse lỗi để quyết định có cần nâng model lên `qwen2.5:3b` hay model khác không.
+
+## 26. Câu hỏi cần xác nhận trước khi implement API thật
 
 1. Device API hiện có endpoint search/read/write cụ thể là gì?
 2. Device ID là string nào: `id`, `device_id`, hay field khác?
@@ -1018,12 +1183,11 @@ Tắt tất cả thiết bị.
 4. API có phân biệt online/offline không?
 5. Khi device offline, API set value trả lỗi hay vẫn accept command?
 6. Có property chuẩn sẵn chưa, ví dụ `power`, `temperature`, `brightness`, `mode`?
-7. Có cần auth theo user/tenant không?
-8. Frontend muốn response hoàn toàn structured JSON hay kèm text chat?
-9. Có cần lưu lịch sử hội thoại không, hay chỉ xử lý từng câu độc lập?
-10. Các lệnh high-risk như khóa cửa, mở cửa, tắt camera có nằm trong scope không?
+7. Frontend muốn response hoàn toàn structured JSON hay kèm text chat?
+8. Có cần lưu lịch sử hội thoại dài hạn không, hay chỉ cần 3 đến 5 lượt gần nhất?
+9. Các lệnh high-risk như khóa cửa, mở cửa, tắt camera có nằm trong scope không?
 
-## 25. Kết luận
+## 27. Kết luận
 
 Thiết kế phù hợp nhất cho nhu cầu hiện tại là:
 
