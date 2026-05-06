@@ -21,7 +21,7 @@ Services:
 - MCP Device Server health: `http://localhost:4001/health`
 - AI Gateway health: `http://localhost:4000/health`
 
-`ollama-init` pulls `qwen2.5:1.5b` before `ai-gateway` starts.
+`ollama-init` pulls `qwen2.5:3b` before `ai-gateway` starts.
 
 Useful parser runtime knobs:
 

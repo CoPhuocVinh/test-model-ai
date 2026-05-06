@@ -1,7 +1,7 @@
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
-  ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:1.5b",
+  ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:3b",
   mcpDeviceServerUrl: process.env.MCP_DEVICE_SERVER_URL ?? "http://localhost:4001/mcp",
   intentConfidenceThreshold: Number(process.env.INTENT_CONFIDENCE_THRESHOLD ?? 0.65),
   intentParseMaxRetries: Number(process.env.INTENT_PARSE_MAX_RETRIES ?? 2),
