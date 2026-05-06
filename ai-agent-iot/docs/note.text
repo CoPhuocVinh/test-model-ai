@@ -1,0 +1,7 @@
+Implemented the hard-code cleanup for the ai-agent-iot LLM flow.
+
+The main changes are in config.ts, intentParser.chain.ts, and deviceAgent.graph.ts. INTENT_CONFIDENCE_THRESHOLD now actually controls clarification behavior at runtime, repair parsing no longer hard-codes numPredict: 80, and the Ollama parser knobs are configurable via env (OLLAMA_MODEL, OLLAMA_FORMAT, OLLAMA_TEMPERATURE, LLM_NUM_PREDICT, LLM_REPAIR_NUM_PREDICT). I also moved the parser prompts into intentParser.prompts.ts and the heuristic keyword/confidence constants into intentParser.constants.ts, so the chain code is no longer carrying long embedded prompt strings and scattered magic values.
+
+On the runtime side, docker-compose.agent-phase1.yml now uses OLLAMA_MODEL as the single source for both ollama-init pull and ai-gateway, and README.md documents the knobs and prompt locations. I also tightened the intent contract in intent.schema.ts by removing dead internal intent values that were no longer part of the actual parser flow, and added regression-oriented config tests in parserConfig.test.ts.
+
+Verification: npm run build passes for both ai-agent-iot/ai-gateway and ai-agent-iot/mcp-device-server. npm test could not run in this environment because the installed vitest stack requires Node 20+, while this machine is on Node 18.20.8, so the test runner fails during startup rather than on project logic.

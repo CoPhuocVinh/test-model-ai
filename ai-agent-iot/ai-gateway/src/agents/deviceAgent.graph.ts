@@ -1,5 +1,7 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { config } from "../config.js";
 import { heuristicParseIntent, parseIntent, repairSearchDevicesIntent } from "../chains/intentParser.chain.js";
+import { clarificationIntentTypes, terminalIntentTypes } from "../chains/intentParser.constants.js";
 import { deviceMcpClient } from "../mcp/deviceMcpClient.js";
 import type { DeviceState, DeviceSummary } from "../schemas/device.schema.js";
 import type { DeviceAction, ParsedIntent } from "../schemas/intent.schema.js";
@@ -14,6 +16,18 @@ import {
   readResultResponse,
   writeSuccessResponse
 } from "../policies/devicePolicy.js";
+
+const clarificationIntentSet = new Set<string>(clarificationIntentTypes);
+const terminalIntentSet = new Set<string>(terminalIntentTypes);
+type TerminalIntentType = (typeof terminalIntentTypes)[number];
+
+export function shouldRequestClarification(intent?: ParsedIntent) {
+  return Boolean(intent && (intent.confidence < config.intentConfidenceThreshold || clarificationIntentSet.has(intent.intent)));
+}
+
+export function isTerminalIntent(intent?: ParsedIntent): intent is ParsedIntent & { intent: TerminalIntentType } {
+  return Boolean(intent && terminalIntentSet.has(intent.intent));
+}
 
 export type DeviceAgentState = {
   conversationId: string;
@@ -60,14 +74,14 @@ export async function parseUserMessage(state: DeviceAgentState): Promise<Partial
     user_message: state.userMessage,
     intent
   }));
-  if (intent.confidence < 0.65 || intent.intent === "clarification_needed" || intent.intent === "unsupported") {
+  if (shouldRequestClarification(intent)) {
     const fallbackIntent = heuristicParseIntent(state.userMessage, state.messageHistory ?? []);
-    if (fallbackIntent.intent === "out_of_scope" || fallbackIntent.intent === "harmful_intent" || fallbackIntent.intent === "not_device_related") {
+    if (isTerminalIntent(fallbackIntent)) {
       return { intent: fallbackIntent, response: fixedIntentResponse(fallbackIntent.intent) };
     }
     return { intent, response: fixedIntentResponse("clarification_needed") };
   }
-  if (intent.intent === "out_of_scope" || intent.intent === "harmful_intent" || intent.intent === "not_device_related") {
+  if (isTerminalIntent(intent)) {
     return { intent, response: fixedIntentResponse(intent.intent) };
   }
   return { intent };

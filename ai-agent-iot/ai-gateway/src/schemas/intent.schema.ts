@@ -18,8 +18,6 @@ export const parsedIntentSchema = z.object({
     "read_device_state",
     "write_device_value",
     "search_devices",
-    "confirm_pending_action",
-    "not_device_related",
     "out_of_scope",
     "harmful_intent",
     "clarification_needed",
