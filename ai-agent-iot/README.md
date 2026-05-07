@@ -21,13 +21,31 @@ Services:
 - MCP Device Server health: `http://localhost:4001/health`
 - AI Gateway health: `http://localhost:4000/health`
 
-`ollama-init` pulls `qwen2.5:3b` before `ai-gateway` starts.
+`ollama-init` pulls the same model configured in `OLLAMA_MODEL` before `ai-gateway` starts. The default is `qwen2.5:3b`.
 
 Useful parser runtime knobs:
 
+- `OLLAMA_MODEL=qwen2.5:3b`: source of truth for the model that `ai-gateway` calls and `ollama-init` pulls.
+- `OLLAMA_BASE_URL=http://ollama:11434`: Ollama endpoint used by the parser.
+- `OLLAMA_FORMAT=json`: Ollama response format requested by the parser.
+- `OLLAMA_TEMPERATURE=0`: deterministic parser setting for intent extraction.
+- `INTENT_CONFIDENCE_THRESHOLD=0.65`: minimum confidence before the gateway asks for clarification.
 - `LLM_PARSE_TIMEOUT_MS=300000`: max time for one Ollama parse attempt.
 - `INTENT_PARSE_MAX_RETRIES=2`: retry count after the first parse attempt.
 - `LLM_NUM_PREDICT=220`: caps the JSON response length so Ollama does not keep generating unnecessary tokens.
+- `LLM_REPAIR_NUM_PREDICT=80`: caps the shorter repair prompt used when broad search intent needs fixing.
+- `SEARCH_REPAIR_CONFIDENCE_THRESHOLD=0.6`: minimum repair confidence before broad searches are converted to list-all.
+- `MESSAGE_HISTORY_TURNS=5`: number of recent user/assistant turns kept in memory per conversation.
+- `PENDING_ACTION_TTL_SECONDS=300`: max lifetime for a pending device-selection action.
+- `LOG_LEVEL=info`: gateway structured log level (`debug`, `info`, `warn`, `error`, or `silent`).
+- `LOG_USER_MESSAGES=false`: keep raw user messages out of structured logs by default.
+
+Prompt modules:
+
+- `ai-gateway/src/chains/intentParser.prompts.ts`: main parser prompt and search-repair prompt.
+- `ai-gateway/src/chains/intentParser.constants.ts`: keyword lists and heuristic confidence constants.
+
+If you want to change model/runtime behavior, update `OLLAMA_MODEL` and related env values in `docker-compose.agent-phase1.yml` so the pulled model and runtime config stay aligned.
 
 ## Chat Examples
 

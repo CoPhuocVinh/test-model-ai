@@ -25,6 +25,16 @@ describe("heuristic intent parser fallback", () => {
     expect(intent.action).toEqual({ property: "temperature", operation: "add", value: 2 });
   });
 
+  it("resolves pronoun reads from previous history", () => {
+    const intent = heuristicParseIntent("Nó đang bật không?", [
+      { role: "user", content: "Máy lạnh phòng ngủ đang bao nhiêu độ?" },
+      { role: "assistant", content: "Máy lạnh phòng ngủ đang đặt 24 độ C." }
+    ]);
+    expect(intent.intent).toBe("read_device_state");
+    expect(intent.device_query.raw).toBe("máy lạnh phòng ngủ");
+    expect(intent.property).toBe("power");
+  });
+
   it("prioritizes explicit current device over history", () => {
     const intent = heuristicParseIntent("Đèn khu vực tiếp khách còn hoạt động không?", [
       { role: "user", content: "Máy lạnh phòng ngủ đang bao nhiêu độ?" },
