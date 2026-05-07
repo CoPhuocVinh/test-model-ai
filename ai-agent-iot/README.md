@@ -34,6 +34,11 @@ Useful parser runtime knobs:
 - `INTENT_PARSE_MAX_RETRIES=2`: retry count after the first parse attempt.
 - `LLM_NUM_PREDICT=220`: caps the JSON response length so Ollama does not keep generating unnecessary tokens.
 - `LLM_REPAIR_NUM_PREDICT=80`: caps the shorter repair prompt used when broad search intent needs fixing.
+- `SEARCH_REPAIR_CONFIDENCE_THRESHOLD=0.6`: minimum repair confidence before broad searches are converted to list-all.
+- `MESSAGE_HISTORY_TURNS=5`: number of recent user/assistant turns kept in memory per conversation.
+- `PENDING_ACTION_TTL_SECONDS=300`: max lifetime for a pending device-selection action.
+- `LOG_LEVEL=info`: gateway structured log level (`debug`, `info`, `warn`, `error`, or `silent`).
+- `LOG_USER_MESSAGES=false`: keep raw user messages out of structured logs by default.
 
 Prompt modules:
 

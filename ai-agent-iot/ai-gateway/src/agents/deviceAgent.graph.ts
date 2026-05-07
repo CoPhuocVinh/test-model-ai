@@ -2,6 +2,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { config } from "../config.js";
 import { heuristicParseIntent, parseIntent, repairSearchDevicesIntent } from "../chains/intentParser.chain.js";
 import { clarificationIntentTypes, terminalIntentTypes } from "../chains/intentParser.constants.js";
+import { logEvent } from "../logger.js";
 import { deviceMcpClient } from "../mcp/deviceMcpClient.js";
 import type { DeviceState, DeviceSummary } from "../schemas/device.schema.js";
 import type { DeviceAction, ParsedIntent } from "../schemas/intent.schema.js";
@@ -60,6 +61,9 @@ const AgentStateAnnotation = Annotation.Root({
 });
 
 export async function loadMessageHistory(state: DeviceAgentState): Promise<Partial<DeviceAgentState>> {
+  if (state.messageHistory) {
+    return {};
+  }
   return { messageHistory: getMessageHistory(state.conversationId) };
 }
 
@@ -68,12 +72,12 @@ export async function parseUserMessage(state: DeviceAgentState): Promise<Partial
     return { response: fixedIntentResponse("clarification_needed") };
   }
   const intent = await parseIntent(state.userMessage, state.messageHistory ?? []);
-  console.log(JSON.stringify({
+  logEvent("info", {
     event: "parsed_intent",
     conversation_id: state.conversationId,
     user_message: state.userMessage,
     intent
-  }));
+  });
   if (shouldRequestClarification(intent)) {
     const fallbackIntent = heuristicParseIntent(state.userMessage, state.messageHistory ?? []);
     if (isTerminalIntent(fallbackIntent)) {
@@ -93,13 +97,13 @@ export async function searchDevices(state: DeviceAgentState): Promise<Partial<De
   if (matchedDevices.length === 0 && state.intent.intent === "search_devices" && state.userMessage) {
     const repairedIntent = await repairSearchDevicesIntent(state.userMessage, state.intent);
     if (JSON.stringify(repairedIntent.device_query) !== JSON.stringify(state.intent.device_query)) {
-      console.log(JSON.stringify({
+      logEvent("info", {
         event: "repaired_search_intent",
         conversation_id: state.conversationId,
         user_message: state.userMessage,
         before: state.intent,
         after: repairedIntent
-      }));
+      });
       matchedDevices = await deviceMcpClient.searchDevices(repairedIntent.device_query);
       return { intent: repairedIntent, matchedDevices };
     }
@@ -247,9 +251,10 @@ export function buildDeviceAgentGraph() {
 }
 
 export async function runChat(conversationId: string, message: string): Promise<AgentResponse> {
+  const previousHistory = getMessageHistory(conversationId);
   appendMessage(conversationId, { role: "user", content: message });
   const graph = buildDeviceAgentGraph();
-  const result = await graph.invoke({ conversationId, userMessage: message });
+  const result = await graph.invoke({ conversationId, userMessage: message, messageHistory: previousHistory });
   const response = result.response ?? fixedIntentResponse("error");
   appendMessage(conversationId, { role: "assistant", content: response.message });
   return response;

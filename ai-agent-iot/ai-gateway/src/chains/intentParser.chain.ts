@@ -5,13 +5,23 @@ import { config } from "../config.js";
 import type { ChatMessage } from "../stores/conversationStore.js";
 import { parsedIntentSchema, type ParsedIntent } from "../schemas/intent.schema.js";
 import {
+  actionKeywordGroups,
   clarificationIntentTypes,
+  currentDeviceReferenceTerms,
+  deviceCollectionKeywords,
+  deviceListRequestKeywords,
   genericInventoryQueries,
   guardedFallbackIntents,
+  harmfulIntentKeywords,
   heuristicConfidence,
+  outOfScopeKeywords,
   parserFillerTerms,
+  politeCommandPrefixes,
+  propertyKeywordGroups,
+  readStateKeywords,
   smartHomeKeywords,
-  terminalIntentTypes
+  terminalIntentTypes,
+  writeCommandKeywords
 } from "./intentParser.constants.js";
 import { intentParserPrompt, searchRepairPrompt } from "./intentParser.prompts.js";
 
@@ -63,6 +73,10 @@ export function buildSearchRepairModelOptions(): ChatOllamaOptions {
   };
 }
 
+export function shouldAcceptSearchRepairAll(confidence: number) {
+  return confidence >= config.searchRepairConfidenceThreshold;
+}
+
 function extractJson(content: unknown) {
   const text = Array.isArray(content)
     ? content.map((part) => (typeof part === "string" ? part : "text" in part ? part.text : "")).join("")
@@ -100,46 +114,30 @@ function isGenericDeviceListQuery(queryText: string) {
   return query.length === 0 || genericInventoryQueries.includes(query);
 }
 
+function hasAnyKeyword(text: string, keywords: readonly string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function isGenericDeviceListRequest(message: string, raw: RawIntent) {
   if (raw.intent !== "search_devices") return false;
   if (raw.query_scope === "all") return true;
   if (raw.query_scope === "filtered") return false;
   const text = normalizeVietnamese(message);
   const cleanedRawQuery = cleanQueryText(raw.device_query_text);
-  const mentionsDeviceCollection =
-    text.includes("thiết bị") ||
-    text.includes("thiet bi") ||
-    text.includes("trong nhà") ||
-    text.includes("trong nha") ||
-    text.includes("các thứ") ||
-    text.includes("cac thu") ||
-    text.includes("thứ gì") ||
-    text.includes("thu gi");
+  const mentionsDeviceCollection = hasAnyKeyword(text, deviceCollectionKeywords);
   return cleanedRawQuery.length === 0 || mentionsDeviceCollection;
 }
 
 function inferProperty(text: string): string | null {
   const value = normalizeVietnamese(text);
-  if (value.includes("bật") || value.includes("bat") || value.includes("mở") || value.includes("mo") || value.includes("tắt") || value.includes("tat")) {
-    return "power";
-  }
-  if (value.includes("hoạt động") || value.includes("hoat dong") || value.includes("online") || value.includes("offline") || value.includes("kết nối") || value.includes("ket noi")) {
-    return "online";
-  }
-  if (value.includes("độ") || value.includes("do") || value.includes("nhiệt độ") || value.includes("nhiet do") || value.includes("tăng") || value.includes("tang") || value.includes("giảm") || value.includes("giam")) {
-    return "temperature";
-  }
-  if (value.includes("%") || value.includes("sáng") || value.includes("sang") || value.includes("brightness")) {
-    return "brightness";
-  }
-  if (value.includes("pin") || value.includes("battery")) {
-    return "battery";
-  }
-  if (value.includes("mở cửa") || value.includes("mo cua") || value.includes("đóng cửa") || value.includes("dong cua")) {
-    return "open";
-  }
-  if (value.includes("mode") || value.includes("chế độ") || value.includes("che do")) {
-    return "mode";
+  for (const group of propertyKeywordGroups) {
+    if (hasAnyKeyword(value, group.keywords)) {
+      return group.property;
+    }
   }
   return null;
 }
@@ -149,19 +147,19 @@ function inferAction(text: string, propertyHint?: string | null, valueHint?: unk
   const property = propertyHint ?? inferProperty(value);
   const numericValue = typeof valueHint === "number" ? valueHint : extractNumber(value);
 
-  if (value.includes("bật") || value.includes("bat") || value.includes("mở") || value.includes("mo")) {
+  if (hasAnyKeyword(value, actionKeywordGroups.powerOn)) {
     return { property: property ?? "power", operation: "set", value: true };
   }
-  if (value.includes("tắt") || value.includes("tat")) {
+  if (hasAnyKeyword(value, actionKeywordGroups.powerOff)) {
     return { property: property ?? "power", operation: "set", value: false };
   }
-  if (value.includes("tăng") || value.includes("tang")) {
+  if (hasAnyKeyword(value, actionKeywordGroups.add)) {
     return { property: property ?? "temperature", operation: "add", value: numericValue ?? 1 };
   }
-  if (value.includes("giảm") || value.includes("giam")) {
+  if (hasAnyKeyword(value, actionKeywordGroups.subtract)) {
     return { property: property ?? "temperature", operation: "subtract", value: numericValue ?? 1 };
   }
-  if (numericValue !== undefined && (value.includes("set") || value.includes("đặt") || value.includes("dat") || property)) {
+  if (numericValue !== undefined && (hasAnyKeyword(value, actionKeywordGroups.set) || property)) {
     return { property: property ?? "temperature", operation: "set", value: numericValue };
   }
   if (property && valueHint !== null && valueHint !== undefined) {
@@ -181,17 +179,19 @@ function inferHistoryDeviceQueryText(history: ChatMessage[] = []) {
 
 function hasCurrentDeviceReference(message: string) {
   const text = normalizeVietnamese(message);
-  return !["cái đó", "cai do", "nó", "no", "thiết bị đó", "thiet bi do"].some((term) => text.includes(term));
+  return !hasAnyKeyword(text, currentDeviceReferenceTerms);
 }
 
 function startsWithWriteCommand(message: string) {
   let text = normalizeVietnamese(message).trim();
   let previous = "";
+  const politePrefixPattern = new RegExp(`^(${politeCommandPrefixes.map(escapeRegExp).join("|")})\\s+`, "g");
+  const writeCommandPattern = new RegExp(`^(${writeCommandKeywords.map(escapeRegExp).join("|")})(\\s|$)`);
   while (previous !== text) {
     previous = text;
-    text = text.replace(/^(cho|tui|tôi|toi|giúp|giup|vui lòng|vui long|hãy|hay)\s+/g, "").trim();
+    text = text.replace(politePrefixPattern, "").trim();
   }
-  return /^(bật|bat|mở|mo|tắt|tat|set|đặt|dat|tăng|tang|giảm|giam|chuyển|chuyen)(\s|$)/.test(text);
+  return writeCommandPattern.test(text);
 }
 
 function toParsedIntent(raw: RawIntent, message: string, history: ChatMessage[] = []): ParsedIntent {
@@ -216,29 +216,17 @@ function toParsedIntent(raw: RawIntent, message: string, history: ChatMessage[] 
 
 export function heuristicParseIntent(message: string, history: ChatMessage[] = []): ParsedIntent {
   const text = normalizeVietnamese(message);
-  if (text.includes("bom") || text.includes("vũ khí")) {
+  if (hasAnyKeyword(text, harmfulIntentKeywords)) {
     return toParsedIntent({ intent: "harmful_intent", query_scope: "unknown", device_query_text: "", operation_text: null, property_hint: null, value_hint: null, confidence: heuristicConfidence.harmfulIntent }, message, history);
   }
-  if (text.includes("code") || text.includes("website") || text.includes("bán hàng")) {
+  if (hasAnyKeyword(text, outOfScopeKeywords)) {
     return toParsedIntent({ intent: "out_of_scope", query_scope: "unknown", device_query_text: "", operation_text: null, property_hint: null, value_hint: null, confidence: heuristicConfidence.outOfScope }, message, history);
   }
 
   const asksForDeviceList =
-    text.includes("list") ||
-    text.includes("liệt kê") ||
-    text.includes("liet ke") ||
-    text.includes("danh sách") ||
-    text.includes("danh sach") ||
-    text.includes("xem các thiết bị") ||
-    text.includes("xem cac thiet bi") ||
-    text.includes("các thiết bị") ||
-    text.includes("cac thiet bi") ||
+    hasAnyKeyword(text, deviceListRequestKeywords) ||
     (text.includes("thiết bị") && text.includes("gì")) ||
-    (text.includes("thiet bi") && text.includes("gi")) ||
-    text.includes("các thứ") ||
-    text.includes("cac thu") ||
-    text.includes("thứ gì") ||
-    text.includes("thu gi");
+    (text.includes("thiet bi") && text.includes("gi"));
   if (asksForDeviceList) {
     return toParsedIntent({
       intent: "search_devices",
@@ -252,10 +240,7 @@ export function heuristicParseIntent(message: string, history: ChatMessage[] = [
   }
 
   const isRead =
-    text.includes("?") || text.endsWith("không") || text.includes("khong") || text.includes("bao nhiêu") ||
-    text.includes("bao nhieu") || text.includes("trạng thái") || text.includes("trang thai") ||
-    text.includes("đang") || text.includes("dang") || text.includes("online") || text.includes("offline") ||
-    text.includes("hoạt động") || text.includes("hoat dong") || text.includes("kết nối") || text.includes("ket noi");
+    text.endsWith("không") || hasAnyKeyword(text, readStateKeywords);
   if (isRead && !startsWithWriteCommand(message)) {
     return toParsedIntent({
       intent: "read_device_state",
@@ -268,11 +253,7 @@ export function heuristicParseIntent(message: string, history: ChatMessage[] = [
     }, message, history);
   }
 
-  const isWrite =
-    text.includes("bật") || text.includes("bat") || text.includes("mở") || text.includes("mo") ||
-    text.includes("tắt") || text.includes("tat") || text.includes("set") || text.includes("đặt") ||
-    text.includes("dat") || text.includes("tăng") || text.includes("tang") || text.includes("giảm") ||
-    text.includes("giam") || text.includes("chuyển") || text.includes("chuyen");
+  const isWrite = hasAnyKeyword(text, writeCommandKeywords);
   if (isWrite) {
     return toParsedIntent({
       intent: "write_device_value",
@@ -373,7 +354,7 @@ export async function repairSearchDevicesIntent(message: string, currentIntent: 
       config.llmParseTimeoutMs
     );
     const repaired = searchRepairSchema.parse(JSON.parse(extractJson((response as AIMessage).content)));
-    if (repaired.query_scope === "all" && repaired.confidence >= 0.6) {
+    if (repaired.query_scope === "all" && shouldAcceptSearchRepairAll(repaired.confidence)) {
       return { ...currentIntent, device_query: {}, confidence: Math.max(currentIntent.confidence, repaired.confidence) };
     }
     if (repaired.query_scope === "filtered" && repaired.device_query_text.trim()) {

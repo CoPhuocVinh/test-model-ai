@@ -15,8 +15,9 @@ describe("intent parser runtime config", () => {
     process.env.OLLAMA_TEMPERATURE = "0.2";
     process.env.LLM_NUM_PREDICT = "321";
     process.env.LLM_REPAIR_NUM_PREDICT = "77";
+    process.env.SEARCH_REPAIR_CONFIDENCE_THRESHOLD = "0.72";
 
-    const { buildIntentParserModelOptions, buildSearchRepairModelOptions } = await import("../src/chains/intentParser.chain.js");
+    const { buildIntentParserModelOptions, buildSearchRepairModelOptions, shouldAcceptSearchRepairAll } = await import("../src/chains/intentParser.chain.js");
 
     expect(buildIntentParserModelOptions()).toMatchObject({
       baseUrl: "http://ollama-test:11434",
@@ -32,6 +33,14 @@ describe("intent parser runtime config", () => {
       temperature: 0.2,
       numPredict: 77
     });
+    expect(shouldAcceptSearchRepairAll(0.71)).toBe(false);
+    expect(shouldAcceptSearchRepairAll(0.72)).toBe(true);
+  });
+
+  it("fails fast for invalid numeric env values", async () => {
+    process.env.INTENT_CONFIDENCE_THRESHOLD = "abc";
+
+    await expect(import("../src/config.js")).rejects.toThrow("Invalid numeric env INTENT_CONFIDENCE_THRESHOLD");
   });
 
   it("loads parser prompts from the dedicated prompt module", async () => {
@@ -60,5 +69,18 @@ describe("intent parser runtime config", () => {
       action: null,
       confidence: 0.91
     })).toBe(false);
+  });
+
+  it("redacts user messages from log payloads by default", async () => {
+    const { buildLogPayload } = await import("../src/logger.js");
+
+    expect(buildLogPayload({
+      event: "parsed_intent",
+      conversation_id: "conv",
+      user_message: "Nó đang bật không?"
+    })).toEqual({
+      event: "parsed_intent",
+      conversation_id: "conv"
+    });
   });
 });
