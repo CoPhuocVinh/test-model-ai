@@ -3,9 +3,8 @@ import { z } from "zod";
 import { runChat } from "../agents/deviceAgent.graph.js";
 
 const chatRequestSchema = z.object({
-  conversation_id: z.string().min(1),
   message: z.string().min(1)
-});
+}).strict();
 
 export async function registerChatRoutes(app: FastifyInstance) {
   app.post("/chat", async (request, reply) => {
@@ -18,7 +17,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       });
     }
 
-    const response = await runChat(parsed.data.conversation_id, parsed.data.message);
+    const response = await runChat(parsed.data.message);
     return reply.send(response);
   });
 }

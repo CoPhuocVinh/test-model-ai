@@ -1,22 +1,24 @@
-import type { DeviceState, DeviceSummary } from "./device.schema.js";
+import type { BackendDevice, DeviceState, DeviceSummary } from "./device.schema.js";
 import type { DeviceAction } from "./intent.schema.js";
+
+export type PublicDevice = BackendDevice | DeviceState | DeviceSummary;
 
 export type AgentResponse =
   | {
       type: "device_read_result";
       message: string;
-      devices: DeviceState[];
+      devices: PublicDevice[];
     }
   | {
       type: "device_write_success";
       message: string;
-      device: Pick<DeviceSummary, "device_id" | "name">;
+      device: PublicDevice;
       action: DeviceAction;
     }
   | {
       type: "multiple_devices_matched";
       message: string;
-      devices: DeviceSummary[];
+      devices: PublicDevice[];
       pending_action: {
         id: string;
         property: string;

@@ -25,6 +25,13 @@ describe("heuristic intent parser fallback", () => {
     expect(intent.action).toEqual({ property: "temperature", operation: "add", value: 2 });
   });
 
+  it("removes comfort wording from device queries", () => {
+    const intent = heuristicParseIntent("nóng quá, giảm máy lạnh xuống 2 độ đi");
+    expect(intent.intent).toBe("write_device_value");
+    expect(intent.device_query.raw).toBe("máy lạnh");
+    expect(intent.action).toEqual({ property: "temperature", operation: "subtract", value: 2 });
+  });
+
   it("resolves pronoun reads from previous history", () => {
     const intent = heuristicParseIntent("Nó đang bật không?", [
       { role: "user", content: "Máy lạnh phòng ngủ đang bao nhiêu độ?" },

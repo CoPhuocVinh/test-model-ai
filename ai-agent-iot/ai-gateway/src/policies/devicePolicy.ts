@@ -2,6 +2,10 @@ import type { DeviceState, DeviceSummary } from "../schemas/device.schema.js";
 import type { DeviceAction } from "../schemas/intent.schema.js";
 import type { AgentResponse } from "../schemas/response.schema.js";
 
+function toPublicDevice<T extends DeviceState | DeviceSummary>(device: T) {
+  return device.raw ?? device;
+}
+
 export function deviceNotFoundResponse(): AgentResponse {
   return {
     type: "device_not_found",
@@ -29,16 +33,16 @@ export function readResultResponse(states: DeviceState[]): AgentResponse {
   return {
     type: "device_read_result",
     message: `Tìm thấy ${states.length} thiết bị phù hợp.`,
-    devices: states
+    devices: states.map(toPublicDevice)
   };
 }
 
-export function writeSuccessResponse(device: Pick<DeviceSummary, "device_id" | "name">, action: DeviceAction): AgentResponse {
+export function writeSuccessResponse(device: DeviceSummary, action: DeviceAction): AgentResponse {
   const verb = action.property === "power" ? (action.value === true ? "bật" : "tắt") : `set ${action.property}`;
   return {
     type: "device_write_success",
     message: `Đã ${verb} ${device.name}.`,
-    device,
+    device: toPublicDevice(device),
     action
   };
 }

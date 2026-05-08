@@ -3,10 +3,9 @@ import { z } from "zod";
 import { confirmAction } from "../agents/deviceAgent.graph.js";
 
 const confirmRequestSchema = z.object({
-  conversation_id: z.string().min(1),
   pending_action_id: z.string().min(1),
   device_id: z.string().min(1)
-});
+}).strict();
 
 export async function registerConfirmActionRoutes(app: FastifyInstance) {
   app.post("/device-actions/confirm", async (request, reply) => {
@@ -19,7 +18,7 @@ export async function registerConfirmActionRoutes(app: FastifyInstance) {
       });
     }
 
-    const response = await confirmAction(parsed.data.conversation_id, parsed.data.pending_action_id, parsed.data.device_id);
+    const response = await confirmAction(parsed.data.pending_action_id, parsed.data.device_id);
     return reply.send(response);
   });
 }

@@ -39,6 +39,14 @@ Useful parser runtime knobs:
 - `PENDING_ACTION_TTL_SECONDS=300`: max lifetime for a pending device-selection action.
 - `LOG_LEVEL=info`: gateway structured log level (`debug`, `info`, `warn`, `error`, or `silent`).
 - `LOG_USER_MESSAGES=false`: keep raw user messages out of structured logs by default.
+- `DEVICE_BACKEND_BASE_URL=https://iot.api.bmscontrols.vn`: customer IoT backend used by the MCP device adapter.
+- `DEMO_DEVICE_CODE=MLM`: single demo device code used while a list-devices API is not available.
+
+Device backend adapter:
+
+- Reads the demo device with `GET /iot/device-by-mac/:code`.
+- Writes the demo device value with `PATCH /iot/device-by-mac?id=:code&value=:value`.
+- Normalizes the backend device internally for search/control, but chat responses include the backend device object.
 
 Prompt modules:
 
@@ -55,7 +63,6 @@ Read multiple devices:
 curl http://localhost:4000/chat \
   -H 'content-type: application/json' \
   -d '{
-    "conversation_id": "demo",
     "message": "Đèn phòng khách đang bật không?"
   }'
 ```
@@ -66,7 +73,6 @@ Write with multiple matches:
 curl http://localhost:4000/chat \
   -H 'content-type: application/json' \
   -d '{
-    "conversation_id": "demo",
     "message": "Bật đèn phòng khách"
   }'
 ```
@@ -77,7 +83,6 @@ Confirm a pending action:
 curl http://localhost:4000/device-actions/confirm \
   -H 'content-type: application/json' \
   -d '{
-    "conversation_id": "demo",
     "pending_action_id": "<id from previous response>",
     "device_id": "light_living_ceiling"
   }'
@@ -89,14 +94,12 @@ Multi-turn relative value:
 curl http://localhost:4000/chat \
   -H 'content-type: application/json' \
   -d '{
-    "conversation_id": "ac-demo",
     "message": "Máy lạnh phòng ngủ đang bao nhiêu độ?"
   }'
 
 curl http://localhost:4000/chat \
   -H 'content-type: application/json' \
   -d '{
-    "conversation_id": "ac-demo",
     "message": "Tăng lên 2 độ đi"
   }'
 ```

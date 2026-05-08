@@ -18,5 +18,7 @@ function numberEnv(name: string, defaultValue: number, options: { integer?: bool
 
 export const config = {
   port: numberEnv("PORT", 4001, { integer: true, min: 1, max: 65535 }),
-  mcpPath: process.env.MCP_PATH ?? "/mcp"
+  mcpPath: process.env.MCP_PATH ?? "/mcp",
+  backendBaseUrl: process.env.DEVICE_BACKEND_BASE_URL ?? "https://iot.api.bmscontrols.vn",
+  demoDeviceCode: process.env.DEMO_DEVICE_CODE ?? "MLM"
 };
