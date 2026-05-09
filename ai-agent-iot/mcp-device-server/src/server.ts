@@ -28,7 +28,7 @@ function createMcpServer() {
     },
     async (input) => {
       try {
-        return toToolResult(deviceToolHandlers.search_devices(input));
+        return toToolResult(await deviceToolHandlers.search_devices(input));
       } catch (error) {
         return toToolError(error);
       }
@@ -44,7 +44,7 @@ function createMcpServer() {
     },
     async (input) => {
       try {
-        return toToolResult(deviceToolHandlers.get_device_state(input));
+        return toToolResult(await deviceToolHandlers.get_device_state(input));
       } catch (error) {
         return toToolError(error);
       }
@@ -60,7 +60,7 @@ function createMcpServer() {
     },
     async (input) => {
       try {
-        return toToolResult(deviceToolHandlers.set_device_value(input));
+        return toToolResult(await deviceToolHandlers.set_device_value(input));
       } catch (error) {
         return toToolError(error);
       }
@@ -76,7 +76,7 @@ function createMcpServer() {
     },
     async (input) => {
       try {
-        return toToolResult(deviceToolHandlers.list_device_capabilities(input));
+        return toToolResult(await deviceToolHandlers.list_device_capabilities(input));
       } catch (error) {
         return toToolError(error);
       }
@@ -92,7 +92,7 @@ function createMcpServer() {
     },
     async (input) => {
       try {
-        return toToolResult(deviceToolHandlers.validate_device_value(input));
+        return toToolResult(await deviceToolHandlers.validate_device_value(input));
       } catch (error) {
         return toToolError(error);
       }

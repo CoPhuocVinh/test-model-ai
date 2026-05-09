@@ -13,14 +13,14 @@ const candidates = [
 
 describe("pending action store", () => {
   it("consumes a valid pending action once", () => {
-    const pending = createPendingAction("conv", { property: "power", operation: "set", value: true }, candidates);
-    const result = consumePendingAction("conv", pending.id, "light_living_ceiling");
+    const pending = createPendingAction({ property: "power", operation: "set", value: true }, candidates);
+    const result = consumePendingAction(pending.id, "light_living_ceiling");
     expect(result.selectedDevice.device_id).toBe("light_living_ceiling");
-    expect(() => consumePendingAction("conv", pending.id, "light_living_ceiling")).toThrow("already used");
+    expect(() => consumePendingAction(pending.id, "light_living_ceiling")).toThrow("already used");
   });
 
   it("rejects devices outside candidates", () => {
-    const pending = createPendingAction("conv", { property: "power", operation: "set", value: true }, candidates);
-    expect(() => consumePendingAction("conv", pending.id, "other")).toThrow("not a candidate");
+    const pending = createPendingAction({ property: "power", operation: "set", value: true }, candidates);
+    expect(() => consumePendingAction(pending.id, "other")).toThrow("not a candidate");
   });
 });

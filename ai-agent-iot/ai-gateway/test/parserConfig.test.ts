@@ -76,11 +76,11 @@ describe("intent parser runtime config", () => {
 
     expect(buildLogPayload({
       event: "parsed_intent",
-      conversation_id: "conv",
+      intent: "read_device_state",
       user_message: "Nó đang bật không?"
     })).toEqual({
       event: "parsed_intent",
-      conversation_id: "conv"
+      intent: "read_device_state"
     });
   });
 });

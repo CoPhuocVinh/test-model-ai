@@ -10,6 +10,7 @@ import {
   currentDeviceReferenceTerms,
   deviceCollectionKeywords,
   deviceListRequestKeywords,
+  deviceQueryNoisePhrases,
   genericInventoryQueries,
   guardedFallbackIntents,
   harmfulIntentKeywords,
@@ -96,6 +97,11 @@ function cleanQueryText(input: string) {
     .replace(/\s+/g, " ")
     .trim();
 
+  for (const phrase of [...deviceQueryNoisePhrases].sort((a, b) => b.length - a.length)) {
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, "g"), "$1");
+  }
+
   for (const term of [...parserFillerTerms].sort((a, b) => b.length - a.length)) {
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     text = text.replace(new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, "g"), "$1");
@@ -120,6 +126,14 @@ function hasAnyKeyword(text: string, keywords: readonly string[]) {
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasStandalonePhrase(text: string, phrases: readonly string[]) {
+  const normalized = normalizeVietnamese(text).replace(/[?.!,]/g, " ");
+  return phrases.some((phrase) => {
+    const escaped = escapeRegExp(phrase);
+    return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(normalized);
+  });
 }
 
 function isGenericDeviceListRequest(message: string, raw: RawIntent) {
@@ -178,8 +192,7 @@ function inferHistoryDeviceQueryText(history: ChatMessage[] = []) {
 }
 
 function hasCurrentDeviceReference(message: string) {
-  const text = normalizeVietnamese(message);
-  return !hasAnyKeyword(text, currentDeviceReferenceTerms);
+  return !hasStandalonePhrase(message, currentDeviceReferenceTerms);
 }
 
 function startsWithWriteCommand(message: string) {

@@ -5,7 +5,7 @@ import {
   searchDevices,
   setDeviceValue,
   validateDeviceValue
-} from "../store/mockDevices.js";
+} from "../store/backendDeviceStore.js";
 
 export const searchDevicesInputSchema = {
   query: z.string().optional(),
@@ -35,20 +35,20 @@ export const validateDeviceValueInputSchema = {
 };
 
 export const deviceToolHandlers = {
-  search_devices: (input: z.infer<z.ZodObject<typeof searchDevicesInputSchema>>) => ({
-    devices: searchDevices(input)
+  search_devices: async (input: z.infer<z.ZodObject<typeof searchDevicesInputSchema>>) => ({
+    devices: await searchDevices(input)
   }),
 
-  get_device_state: (input: z.infer<z.ZodObject<typeof getDeviceStateInputSchema>>) =>
+  get_device_state: async (input: z.infer<z.ZodObject<typeof getDeviceStateInputSchema>>) =>
     getDeviceState(input.device_id),
 
-  set_device_value: (input: z.infer<z.ZodObject<typeof setDeviceValueInputSchema>>) =>
+  set_device_value: async (input: z.infer<z.ZodObject<typeof setDeviceValueInputSchema>>) =>
     setDeviceValue(input.device_id, input.property, input.value),
 
-  list_device_capabilities: (input: z.infer<z.ZodObject<typeof listDeviceCapabilitiesInputSchema>>) =>
+  list_device_capabilities: async (input: z.infer<z.ZodObject<typeof listDeviceCapabilitiesInputSchema>>) =>
     listDeviceCapabilities(input.device_id),
 
-  validate_device_value: (input: z.infer<z.ZodObject<typeof validateDeviceValueInputSchema>>) =>
+  validate_device_value: async (input: z.infer<z.ZodObject<typeof validateDeviceValueInputSchema>>) =>
     validateDeviceValue(input.device_id, input.property, input.value)
 };
 

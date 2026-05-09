@@ -32,6 +32,8 @@ services:
       - NODE_ENV=production
       - PORT=4001
       - MCP_PATH=/mcp
+      - DEVICE_BACKEND_BASE_URL=${DEVICE_BACKEND_BASE_URL:-https://iot.api.bmscontrols.vn}
+      - DEMO_DEVICE_CODE=${DEMO_DEVICE_CODE:-MLM}
     ports:
       - "4001:4001"
     healthcheck:

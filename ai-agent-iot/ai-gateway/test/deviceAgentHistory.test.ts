@@ -9,7 +9,7 @@ describe("device agent history loading", () => {
     ];
 
     await expect(loadMessageHistory({
-      conversationId: "conv",
+      sessionId: "default",
       userMessage: "Nó đang bật không?",
       messageHistory: previousHistory
     })).resolves.toEqual({});

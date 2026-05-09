@@ -84,6 +84,17 @@ export const parserFillerTerms = [
   "chuyen"
 ];
 
+export const deviceQueryNoisePhrases = [
+  "nóng quá",
+  "nong qua",
+  "hơi nóng",
+  "hoi nong",
+  "lạnh quá",
+  "lanh qua",
+  "hơi lạnh",
+  "hoi lanh"
+];
+
 export const genericInventoryQueries = ["nhà", "nha", "toàn bộ", "toan bo", "tất cả", "tat ca"];
 
 export const deviceCollectionKeywords = [

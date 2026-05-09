@@ -13,7 +13,6 @@ import {
   deviceNotFoundResponse,
   fixedIntentResponse,
   invalidValueResponse,
-  offlineResponse,
   readResultResponse,
   writeSuccessResponse
 } from "../policies/devicePolicy.js";
@@ -21,6 +20,7 @@ import {
 const clarificationIntentSet = new Set<string>(clarificationIntentTypes);
 const terminalIntentSet = new Set<string>(terminalIntentTypes);
 type TerminalIntentType = (typeof terminalIntentTypes)[number];
+export const DEFAULT_SESSION_ID = "default";
 
 export function shouldRequestClarification(intent?: ParsedIntent) {
   return Boolean(intent && (intent.confidence < config.intentConfidenceThreshold || clarificationIntentSet.has(intent.intent)));
@@ -31,7 +31,7 @@ export function isTerminalIntent(intent?: ParsedIntent): intent is ParsedIntent 
 }
 
 export type DeviceAgentState = {
-  conversationId: string;
+  sessionId: string;
   userMessage?: string;
   messageHistory?: ChatMessage[];
   selectedDeviceId?: string;
@@ -48,7 +48,7 @@ export type DeviceAgentState = {
 };
 
 const AgentStateAnnotation = Annotation.Root({
-  conversationId: Annotation<string>(),
+  sessionId: Annotation<string>(),
   userMessage: Annotation<string | undefined>(),
   messageHistory: Annotation<ChatMessage[] | undefined>(),
   selectedDeviceId: Annotation<string | undefined>(),
@@ -64,7 +64,7 @@ export async function loadMessageHistory(state: DeviceAgentState): Promise<Parti
   if (state.messageHistory) {
     return {};
   }
-  return { messageHistory: getMessageHistory(state.conversationId) };
+  return { messageHistory: getMessageHistory(state.sessionId) };
 }
 
 export async function parseUserMessage(state: DeviceAgentState): Promise<Partial<DeviceAgentState>> {
@@ -74,7 +74,6 @@ export async function parseUserMessage(state: DeviceAgentState): Promise<Partial
   const intent = await parseIntent(state.userMessage, state.messageHistory ?? []);
   logEvent("info", {
     event: "parsed_intent",
-    conversation_id: state.conversationId,
     user_message: state.userMessage,
     intent
   });
@@ -99,7 +98,6 @@ export async function searchDevices(state: DeviceAgentState): Promise<Partial<De
     if (JSON.stringify(repairedIntent.device_query) !== JSON.stringify(state.intent.device_query)) {
       logEvent("info", {
         event: "repaired_search_intent",
-        conversation_id: state.conversationId,
         user_message: state.userMessage,
         before: state.intent,
         after: repairedIntent
@@ -142,13 +140,9 @@ export async function resolveRelativeValue(state: DeviceAgentState, device: Devi
 }
 
 async function executeWriteAction(device: DeviceSummary, action: DeviceAction): Promise<AgentResponse> {
-  if (!device.online) {
-    return offlineResponse(device);
-  }
-
   let finalAction = action;
   if (action.operation !== "set") {
-    finalAction = await resolveRelativeValue({ conversationId: "internal" }, device, action);
+    finalAction = await resolveRelativeValue({ sessionId: DEFAULT_SESSION_ID }, device, action);
   }
 
   const validation = await deviceMcpClient.validateDeviceValue(device.device_id, finalAction.property, finalAction.value);
@@ -185,13 +179,13 @@ export async function requestDeviceSelection(state: DeviceAgentState): Promise<P
     return { response: fixedIntentResponse("clarification_needed") };
   }
 
-  const pending = createPendingAction(state.conversationId, action, devices);
+  const pending = createPendingAction(action, devices);
   return {
     pendingAction: { id: pending.id, action, candidates: devices },
     response: {
       type: "multiple_devices_matched",
       message: "Có nhiều thiết bị phù hợp. Vui lòng chọn thiết bị cần điều khiển.",
-      devices,
+      devices: devices.map((device) => device.raw ?? device),
       pending_action: {
         id: pending.id,
         property: action.property,
@@ -250,21 +244,21 @@ export function buildDeviceAgentGraph() {
     .compile();
 }
 
-export async function runChat(conversationId: string, message: string): Promise<AgentResponse> {
-  const previousHistory = getMessageHistory(conversationId);
-  appendMessage(conversationId, { role: "user", content: message });
+export async function runChat(message: string): Promise<AgentResponse> {
+  const previousHistory = getMessageHistory(DEFAULT_SESSION_ID);
+  appendMessage(DEFAULT_SESSION_ID, { role: "user", content: message });
   const graph = buildDeviceAgentGraph();
-  const result = await graph.invoke({ conversationId, userMessage: message, messageHistory: previousHistory });
+  const result = await graph.invoke({ sessionId: DEFAULT_SESSION_ID, userMessage: message, messageHistory: previousHistory });
   const response = result.response ?? fixedIntentResponse("error");
-  appendMessage(conversationId, { role: "assistant", content: response.message });
+  appendMessage(DEFAULT_SESSION_ID, { role: "assistant", content: response.message });
   return response;
 }
 
-export async function confirmAction(conversationId: string, pendingActionId: string, deviceId: string): Promise<AgentResponse> {
+export async function confirmAction(pendingActionId: string, deviceId: string): Promise<AgentResponse> {
   try {
-    const { pending, selectedDevice } = consumePendingAction(conversationId, pendingActionId, deviceId);
+    const { pending, selectedDevice } = consumePendingAction(pendingActionId, deviceId);
     const response = await executeWriteAction(selectedDevice, pending.action);
-    appendMessage(conversationId, { role: "assistant", content: response.message });
+    appendMessage(DEFAULT_SESSION_ID, { role: "assistant", content: response.message });
     return response;
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? String(error.code) : "PENDING_ACTION_ERROR";
