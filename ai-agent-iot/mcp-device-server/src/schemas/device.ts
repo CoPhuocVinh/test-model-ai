@@ -22,6 +22,13 @@ export const backendDeviceSchema = z.object({
   inputConfig: z.string().nullable().optional()
 }).passthrough();
 
+export const backendDeviceListResponseSchema = z.object({
+  total: z.number(),
+  limit: z.number(),
+  skip: z.number(),
+  data: z.array(backendDeviceSchema)
+}).passthrough();
+
 export const capabilitySchema = z.object({
   property: z.string(),
   type: z.enum(["boolean", "number", "enum", "string"]),
@@ -46,5 +53,6 @@ export const deviceSchema = z.object({
 });
 
 export type BackendDevice = z.infer<typeof backendDeviceSchema>;
+export type BackendDeviceListResponse = z.infer<typeof backendDeviceListResponseSchema>;
 export type DeviceCapability = z.infer<typeof capabilitySchema>;
 export type Device = z.infer<typeof deviceSchema>;
