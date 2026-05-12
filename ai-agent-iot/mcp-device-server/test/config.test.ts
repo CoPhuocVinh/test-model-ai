@@ -16,6 +16,20 @@ describe("mcp server config", () => {
     expect(config.port).toBe(4101);
   });
 
+  it("uses the default IoT API base URL", async () => {
+    const { config } = await import("../src/config.js");
+
+    expect(config.iotApiBaseUrl).toBe("http://iot.dev-api.bmscontrols.vn");
+  });
+
+  it("reads the IoT API base URL from env", async () => {
+    process.env.IOT_API_ENDPOINT = "https://iot.example.test";
+
+    const { config } = await import("../src/config.js");
+
+    expect(config.iotApiBaseUrl).toBe("https://iot.example.test");
+  });
+
   it("fails fast for invalid port env values", async () => {
     process.env.PORT = "abc";
 

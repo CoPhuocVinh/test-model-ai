@@ -39,14 +39,16 @@ Useful parser runtime knobs:
 - `PENDING_ACTION_TTL_SECONDS=300`: max lifetime for a pending device-selection action.
 - `LOG_LEVEL=info`: gateway structured log level (`debug`, `info`, `warn`, `error`, or `silent`).
 - `LOG_USER_MESSAGES=false`: keep raw user messages out of structured logs by default.
-- `DEVICE_BACKEND_BASE_URL=https://iot.api.bmscontrols.vn`: customer IoT backend used by the MCP device adapter.
-- `DEMO_DEVICE_CODE=MLM`: single demo device code used while a list-devices API is not available.
+- `IOT_API_ENDPOINT=http://iot.dev-api.bmscontrols.vn`: customer IoT base endpoint used by the MCP device adapter. Override this per customer environment.
 
 Device backend adapter:
 
-- Reads the demo device with `GET /iot/device-by-mac/:code`.
-- Writes the demo device value with `PATCH /iot/device-by-mac?id=:code&value=:value`.
-- Normalizes the backend device internally for search/control, but chat responses include the backend device object.
+- Lists all devices with `GET /iot/device-by-mac?$search=`.
+- Searches devices by setting `$search` to the requested name or code, then applies local filtering for longer natural-language queries.
+- Reads device state and capabilities by searching the backend with the device `code`, then exact-matching that `code`.
+- Writes a device value with `PATCH /iot/device-by-mac?id=:code&value=:value`.
+- Normalizes aliases, values, and capabilities from each backend device type/input config so non-thermostat devices are not treated as temperature devices.
+- Assumes `$search=` returns all devices needed by the current environment. The backend response includes pagination fields (`total`, `limit`, `skip`); add pagination support if customer environments exceed one returned page.
 
 Prompt modules:
 
